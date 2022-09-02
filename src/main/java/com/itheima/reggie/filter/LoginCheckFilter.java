@@ -33,7 +33,9 @@ public class LoginCheckFilter implements Filter {
                 "/employee/logout",
                 "/backend/**", //静态资源不拦截（包括index页面），只拦截需要查数据库的动态资源
                 "/front/**",
-                "/common/**"
+                "/common/**",
+                "/user/sendMsg", //移动端发送短信
+                "/user/login" //移动端登陆
         };
         boolean check = check(urls,requestURI);
         // 如果不需要，直接放行
@@ -42,24 +44,37 @@ public class LoginCheckFilter implements Filter {
             filterChain.doFilter(request, response);
             return;
         }
-        //4 判断登陆状态，如果已登陆，放行
-        else {
-            if (request.getSession().getAttribute("employee") != null){
-                log.info("已登陆，用户id为{}",request.getSession().getAttribute("employee"));
+        //4-1 判断登陆状态，如果已登陆，放行
+        if (request.getSession().getAttribute("employee") != null) {
+            log.info("已登陆，用户id为{}", request.getSession().getAttribute("employee"));
 
-                //无法通过session拿到当前用户id，从线程角度解决，方便自动填充
-                Long empId = (Long) request.getSession().getAttribute("employee");
-                BaseContext.setCurrentId(empId);
+            //无法通过session拿到当前用户id，从线程角度解决，方便自动填充
+            Long empId = (Long) request.getSession().getAttribute("employee");
+            BaseContext.setCurrentId(empId);
 
-                filterChain.doFilter(request, response);
-                return;
-        //5 否则返回未登录状态,通过输出流的方式向客户端响应数据
-            }else {
-                log.info("未登陆，禁止访问");
-                response.getWriter().write(JSON.toJSONString(R.error("NOTLOGIN")));
-                return;
-            }
+            filterChain.doFilter(request, response);
+            return;
+            //5 否则返回未登录状态,通过输出流的方式向客户端响应数据
         }
+        //4-2 判断登陆状态，如果已登陆，放行
+        if (request.getSession().getAttribute("user") != null) {
+            log.info("已登陆，用户id为{}", request.getSession().getAttribute("user"));
+
+            //无法通过session拿到当前用户id，从线程角度解决，方便自动填充
+            Long userId = (Long) request.getSession().getAttribute("user");
+            BaseContext.setCurrentId(userId);
+
+            filterChain.doFilter(request, response);
+            return;
+
+        }
+
+        //5 否则返回未登录状态,通过输出流的方式向客户端响应数据
+        log.info("未登陆，禁止访问");
+        response.getWriter().write(JSON.toJSONString(R.error("NOTLOGIN")));
+        return;
+
+
     }
 
     /**
