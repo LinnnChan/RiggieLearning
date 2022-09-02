@@ -16,9 +16,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -36,6 +38,9 @@ public class DishController {
 
     @Autowired
     private CategoryService categoryService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     /**
      * 保存新菜品方法
@@ -115,14 +120,38 @@ public class DishController {
      * @return
      */
     @GetMapping("/list")
-    public R<List<Dish>> list(Dish dish) {
+    public R<List<DishDto>> list(Dish dish) {
+        //返回结果
+        List<DishDto> dishDtoList = null;
+        //动态的构造一个key
+        String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();//dish_xxxxxxxxxxxxxxxx_1
+        //先从Redis中获取缓存数据
+        dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
+        if (dishDtoList != null){
+            return R.success(dishDtoList);
+        }
+
+        //如果不存在再查询数据库，然后将菜品数据缓存进Redis
+
         LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(dish.getCategoryId() != null, Dish::getCategoryId, dish.getCategoryId());
         //只查状态为1（在售商品）
         queryWrapper.eq(Dish::getStatus, 1);
         queryWrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
         List<Dish> list = dishService.list(queryWrapper);
-        return R.success(list);
+        dishDtoList = list.stream().map((item) -> {
+            DishDto dishDto = new DishDto();
+            BeanUtils.copyProperties(item,dishDto);
+            Category category = categoryService.getById(item.getCategoryId());
+            if (category != null){
+                dishDto.setCategoryName(category.getName());
+            }
+            return dishDto;
+        }).collect(Collectors.toList());
+
+        //将查询到的数据缓存进Redis, 60分钟后过期
+        redisTemplate.opsForValue().set(key,dishDtoList,60, TimeUnit.MINUTES);
+        return R.success(dishDtoList);
     }
 
     /**
